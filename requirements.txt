@@ -13,3 +13,4 @@ azure-core
 psycopg2-binary
 pandas 
 simple_image_download
+nanoid
