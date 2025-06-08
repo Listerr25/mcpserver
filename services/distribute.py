@@ -2,6 +2,7 @@ import os
 import psycopg2
 import pandas as pd
 from dotenv import load_dotenv
+import random  # optional, if you prefer random start offsets
 
 load_dotenv()
 
@@ -43,19 +44,25 @@ def distribute_urls():
 
     # 5) Build combined rows
     output_rows = []
-    for _, prow in paragraph_df.iterrows():
-        author_key = prow["author_key"]
+    for row_num, (_, prow) in enumerate(paragraph_df.iterrows()):
+        author_key  = prow["author_key"]
         author_imgs = resize_df[resize_df["author"] == author_key].reset_index(drop=True)
-        total = len(author_imgs)
-        if total == 0:
+        total_imgs  = len(author_imgs)
+        if total_imgs == 0:
             continue
 
-        # start with all the paragraph/metadata fields
+        # start with all paragraph/metadata fields
         combined = prow.drop("author_key").to_dict()
 
-        # distribute each URL into suffixes 1..11
+        # choose an offset (rotate start for each story)
+        # Option A: use the row number
+        start_offset = row_num % total_imgs
+        # Option B: random offset
+        # start_offset = random.randrange(total_imgs)
+
+        # distribute each URL into suffixes 1..10
         for i in range(1, 11):
-            idx = (i - 1) % total
+            idx = (start_offset + i - 1) % total_imgs
             suf = str(i)
             combined[f"potraightcoverurl{suf}"]       = author_imgs.at[idx, "potraightcoverurl"]
             combined[f"landscapecoverurl{suf}"]       = author_imgs.at[idx, "landscapecoverurl"]
@@ -69,8 +76,6 @@ def distribute_urls():
     final_df = pd.DataFrame(output_rows)
 
     # 6) Create distribution_data table
-    #    - Quote every column name
-    #    - Separate definitions by commas
     cols_defs = ",\n".join(f"\"{col}\" TEXT" for col in final_df.columns)
     ddl = f"""
     CREATE TABLE IF NOT EXISTS distribution_data (
@@ -80,11 +85,11 @@ def distribute_urls():
     """
     cur.execute(ddl)
 
-    # 7) Bulk insert into distribution_data
+    # 7) Bulk insert
     if not final_df.empty:
-        cols_quoted = [f"\"{c}\"" for c in final_df.columns]
+        cols_quoted  = [f"\"{c}\"" for c in final_df.columns]
         placeholders = ", ".join(["%s"] * len(final_df.columns))
-        insert_sql = f"""
+        insert_sql  = f"""
           INSERT INTO distribution_data ({', '.join(cols_quoted)})
           VALUES ({placeholders});
         """
