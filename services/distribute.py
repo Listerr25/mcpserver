@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def distribute_urls():
+    # 1) Connect
     conn = psycopg2.connect(
         host=os.getenv("PG_HOST"),
         database=os.getenv("PG_DATABASE"),
@@ -15,7 +16,7 @@ def distribute_urls():
     )
     cur = conn.cursor()
 
-    # 1) Pull all the paragraph & metadata columns
+    # 2) Load story text & metadata
     paragraph_df = pd.read_sql_query("""
         SELECT batch_custom_id,
                s2paragraph1, s3paragraph1, s4paragraph1, s5paragraph1,
@@ -24,7 +25,7 @@ def distribute_urls():
         FROM textual_structured_data;
     """, conn)
 
-    # 2) Pull all the image URL columns
+    # 3) Load image URLs
     resize_df = pd.read_sql_query("""
         SELECT author, alttxt, potraightcoverurl, landscapecoverurl,
                squarecoverurl, socialthumbnailcoverurl,
@@ -32,7 +33,7 @@ def distribute_urls():
         FROM resized_url_data;
     """, conn)
 
-    # normalize author keys
+    # 4) Normalize author keys
     paragraph_df["author_key"] = (
         paragraph_df["author_name"]
         .str.replace(" ", "_")
@@ -40,20 +41,21 @@ def distribute_urls():
     )
     resize_df["author"] = resize_df["author"].str.strip()
 
+    # 5) Build combined rows
     output_rows = []
     for _, prow in paragraph_df.iterrows():
         author_key = prow["author_key"]
         author_imgs = resize_df[resize_df["author"] == author_key].reset_index(drop=True)
-        total_imgs = len(author_imgs)
-        if total_imgs == 0:
+        total = len(author_imgs)
+        if total == 0:
             continue
 
-        # start with all paragraph & metadata fields
+        # start with all the paragraph/metadata fields
         combined = prow.drop("author_key").to_dict()
 
-        # distribute each URL column into X1 ... X11
-        for i in range(1, 11):      # <-- now 1 through 11
-            idx = (i - 1) % total_imgs
+        # distribute each URL into suffixes 1..11
+        for i in range(1, 11):
+            idx = (i - 1) % total
             suf = str(i)
             combined[f"potraightcoverurl{suf}"]       = author_imgs.at[idx, "potraightcoverurl"]
             combined[f"landscapecoverurl{suf}"]       = author_imgs.at[idx, "landscapecoverurl"]
@@ -66,27 +68,30 @@ def distribute_urls():
 
     final_df = pd.DataFrame(output_rows)
 
-    # 3) Create distribution_data if it doesn't exist
-    #    (note the comma between every column definition)
-    cols_defs = ",\n".join(f"{col} TEXT" for col in final_df.columns)
-    cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS distribution_data (
-          id SERIAL PRIMARY KEY,
-          {cols_defs}
-        );
-    """)
+    # 6) Create distribution_data table
+    #    - Quote every column name
+    #    - Separate definitions by commas
+    cols_defs = ",\n".join(f"\"{col}\" TEXT" for col in final_df.columns)
+    ddl = f"""
+    CREATE TABLE IF NOT EXISTS distribution_data (
+      id SERIAL PRIMARY KEY,
+      {cols_defs}
+    );
+    """
+    cur.execute(ddl)
 
-    # 4) Bulk insert
+    # 7) Bulk insert into distribution_data
     if not final_df.empty:
-        cols        = final_df.columns.tolist()
-        placeholders = ", ".join(["%s"] * len(cols))
-        insert_sql  = f"""
-          INSERT INTO distribution_data ({', '.join(cols)})
+        cols_quoted = [f"\"{c}\"" for c in final_df.columns]
+        placeholders = ", ".join(["%s"] * len(final_df.columns))
+        insert_sql = f"""
+          INSERT INTO distribution_data ({', '.join(cols_quoted)})
           VALUES ({placeholders});
         """
         cur.executemany(insert_sql, final_df.values.tolist())
         conn.commit()
 
+    # 8) Cleanup
     cur.close()
     conn.close()
 
