@@ -33,8 +33,11 @@ def distribute_urls():
     """, conn)
 
     # normalize author keys
-    paragraph_df["author_key"] = paragraph_df["author_name"]\
-        .str.replace(" ", "_").str.strip()
+    paragraph_df["author_key"] = (
+        paragraph_df["author_name"]
+        .str.replace(" ", "_")
+        .str.strip()
+    )
     resize_df["author"] = resize_df["author"].str.strip()
 
     output_rows = []
@@ -43,14 +46,13 @@ def distribute_urls():
         author_imgs = resize_df[resize_df["author"] == author_key].reset_index(drop=True)
         total_imgs = len(author_imgs)
         if total_imgs == 0:
-            # no images → skip
             continue
 
         # start with all paragraph & metadata fields
         combined = prow.drop("author_key").to_dict()
 
-        # distribute each URL column into X1 ... X10
-        for i in range(1, 11):
+        # distribute each URL column into X1 ... X11
+        for i in range(1, 11):      # <-- now 1 through 11
             idx = (i - 1) % total_imgs
             suf = str(i)
             combined[f"potraightcoverurl{suf}"]       = author_imgs.at[idx, "potraightcoverurl"]
@@ -65,8 +67,8 @@ def distribute_urls():
     final_df = pd.DataFrame(output_rows)
 
     # 3) Create distribution_data if it doesn't exist
-    #    (auto-generating TEXT columns for every field in final_df)
-    cols_defs = "\n".join(f"{col} TEXT" for col in final_df.columns)
+    #    (note the comma between every column definition)
+    cols_defs = ",\n".join(f"{col} TEXT" for col in final_df.columns)
     cur.execute(f"""
         CREATE TABLE IF NOT EXISTS distribution_data (
           id SERIAL PRIMARY KEY,
@@ -76,13 +78,13 @@ def distribute_urls():
 
     # 4) Bulk insert
     if not final_df.empty:
-        cols = list(final_df.columns)
+        cols        = final_df.columns.tolist()
         placeholders = ", ".join(["%s"] * len(cols))
-        insert_sql = f"""
+        insert_sql  = f"""
           INSERT INTO distribution_data ({', '.join(cols)})
           VALUES ({placeholders});
         """
-        cur.executemany(insert_sql, final_df[cols].values.tolist())
+        cur.executemany(insert_sql, final_df.values.tolist())
         conn.commit()
 
     cur.close()
