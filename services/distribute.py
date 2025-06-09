@@ -61,7 +61,7 @@ def distribute_urls():
         # start_offset = random.randrange(total_imgs)
 
         # distribute each URL into suffixes 1..10
-        for i in range(1, 11):
+        for i in range(1, 10):
             idx = (start_offset + i - 1) % total_imgs
             suf = str(i)
             combined[f"potraightcoverurl{suf}"]       = author_imgs.at[idx, "potraightcoverurl"]
