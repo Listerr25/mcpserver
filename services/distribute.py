@@ -1,8 +1,8 @@
 import os
 import psycopg2
 import pandas as pd
-from dotenv import load_dotenv
 import random  # optional, if you prefer random start offsets
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -26,7 +26,7 @@ def distribute_urls():
         FROM textual_structured_data;
     """, conn)
 
-    # 3) Load image URLs
+    # 3) Load image URLs + alt text
     resize_df = pd.read_sql_query("""
         SELECT author, alttxt, potraightcoverurl, landscapecoverurl,
                squarecoverurl, socialthumbnailcoverurl,
@@ -36,9 +36,7 @@ def distribute_urls():
 
     # 4) Normalize author keys
     paragraph_df["author_key"] = (
-        paragraph_df["author_name"]
-        .str.replace(" ", "_")
-        .str.strip()
+        paragraph_df["author_name"].str.replace(" ", "_").str.strip()
     )
     resize_df["author"] = resize_df["author"].str.strip()
 
@@ -55,12 +53,11 @@ def distribute_urls():
         combined = prow.drop("author_key").to_dict()
 
         # choose an offset (rotate start for each story)
-        # Option A: use the row number
         start_offset = row_num % total_imgs
-        # Option B: random offset
+        # or random:
         # start_offset = random.randrange(total_imgs)
 
-        # distribute each URL into suffixes 1..10
+        # distribute each URL + alt text into suffixes 1..9
         for i in range(1, 10):
             idx = (start_offset + i - 1) % total_imgs
             suf = str(i)
@@ -70,6 +67,7 @@ def distribute_urls():
             combined[f"socialthumbnailcoverurl{suf}"] = author_imgs.at[idx, "socialthumbnailcoverurl"]
             combined[f"nextstoryimageurl{suf}"]       = author_imgs.at[idx, "nextstoryimageurl"]
             combined[f"standardurl{suf}"]             = author_imgs.at[idx, "standardurl"]
+            combined[f"s{suf}alt1"]                   = author_imgs.at[idx, "alttxt"]
 
         output_rows.append(combined)
 
