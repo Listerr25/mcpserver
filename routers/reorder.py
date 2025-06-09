@@ -64,7 +64,7 @@ mapping = {
     "potraightcoverurl":     "{{potraightcoverurl}}",
     "landscapecoverurl":     "{{landscapecoverurl}}",
     "squarecoverurl":        "{{squarecoverurl}}",
-    "socialthumbnailcoverurl":"{{socialthumbnailcoverurl}}",
+    "socialthumbnailcoverur":"{{socialthumbnailcoverurl}}",
     "s1image1":              "{{s1image1}}",
     "s2imageurl1":           "{{s2image1}}",
     "s3imageurl1":           "{{s3image1}}",
