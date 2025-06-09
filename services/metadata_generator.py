@@ -21,7 +21,7 @@ def generate_meta_data():
         )
         cur = conn.cursor()
 
-        # ✅ Fetch records from distribution_data where meta_data_added_status is FALSE
+        # ✅ Fetch rows needing metadata
         df = pd.read_sql_query("""
             SELECT * FROM cleaned_video_meta WHERE meta_data_added = FALSE;
         """, conn)
@@ -29,13 +29,19 @@ def generate_meta_data():
         if df.empty:
             return {"status": "no_data", "message": "No rows with meta_data_added = FALSE"}
 
-        # ✅ Define helpers
+        # ── Helpers ────────────────────────────────────────────────────────────────
         def generate_urls(title):
-            slug = re.sub(r'[^a-z0-9-]', '', re.sub(r'\s+', '-', title.lower())).strip('-')
+            slug = re.sub(r'[^a-z0-9-]', '',
+                          re.sub(r'\s+', '-', title.lower())).strip('-')
             alphabet = string.ascii_letters + string.digits + "_-"
             nano_id = ''.join(random.choices(alphabet, k=10)) + "_G"
             slug_nano = f"{slug}_{nano_id}"
-            return nano_id, slug_nano, f"https://suvichaar.org/stories/{slug_nano}", f"https://stories.suvichaar.org/{slug_nano}.html"
+            return (
+                nano_id,
+                slug_nano,
+                f"https://suvichaar.org/stories/{slug_nano}",
+                f"https://stories.suvichaar.org/{slug_nano}.html"
+            )
 
         def generate_iso_time():
             now = datetime.now(timezone.utc)
@@ -70,7 +76,7 @@ def generate_meta_data():
             "Naman": "https://njnaman.in/"
         }
 
-        # ✅ Enrich metadata
+        # ── Enrich metadata ───────────────────────────────────────────────────────
         enriched_rows = []
         for _, row in df.iterrows():
             storytitle = str(row.get("storytitle", "")).strip()
@@ -94,14 +100,15 @@ def generate_meta_data():
                 "userprofileurl": profile,
                 **static_metadata
             })
-
             enriched_rows.append(enriched)
 
-        enriched_df = pd.DataFrame(enriched_rows)
+        # ── Drop original id so SERIAL can take over ─────────────────────────────
+        enriched_df = pd.DataFrame(enriched_rows).drop(columns=["id"])
 
-        # ✅ Create meta_data table with proper quoting
+        # ── Create meta_data table if missing ───────────────────────────────────
         column_defs = ",\n".join([
-            f'"{col}" TEXT' for col in enriched_df.columns if col != "id"
+            f'"{col}" TEXT'
+            for col in enriched_df.columns
         ])
         cur.execute(f"""
             CREATE TABLE IF NOT EXISTS meta_data (
@@ -110,19 +117,20 @@ def generate_meta_data():
             );
         """)
 
-        # ✅ Insert enriched data
+        # ── Insert enriched rows ─────────────────────────────────────────────────
         cols = list(enriched_df.columns)
         insert_query = f"""
-            INSERT INTO meta_data ({', '.join([f'"{col}"' for col in cols])})
+            INSERT INTO meta_data ({', '.join(f'"{c}"' for c in cols)})
             VALUES ({', '.join(['%s'] * len(cols))});
         """
         cur.executemany(insert_query, enriched_df[cols].values.tolist())
 
-        # ✅ Update source table status
+        # ── Mark source rows as done ─────────────────────────────────────────────
         ids_to_update = tuple(df["id"].tolist())
         cur.execute("""
-            UPDATE cleaned_video_meta SET meta_data_added = TRUE
-            WHERE id IN %s;
+            UPDATE cleaned_video_meta
+               SET meta_data_added = TRUE
+             WHERE id IN %s;
         """, (ids_to_update,))
 
         conn.commit()
